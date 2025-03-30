@@ -2,13 +2,12 @@ import cv2
 import face_recognition
 import numpy as np
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import os
 import threading
 import pandas as pd
 from datetime import datetime, time, timedelta
 
-# O'quvchi qo'shish funksiyasi
 def add_face_to_database(name, surname, group, file_path):
     rgb_image = cv2.cvtColor(cv2.imread(file_path), cv2.COLOR_BGR2RGB)
     face_locations = face_recognition.face_locations(rgb_image, model="cnn")
@@ -23,11 +22,10 @@ def add_face_to_database(name, surname, group, file_path):
             database = {}
         database[name] = {"surname": surname, "group": group, "encoding": encoding}
         np.save("face_database.npy", database)
-        print(f"{name} muvaffaqiyatli qo'shildi!")
+        messagebox.showinfo("Muvaffaqiyat", f"{name} muvaffaqiyatli qo'shildi!")
     else:
-        print("Yuz aniqlanmadi.")
+        messagebox.showerror("Xato", "Yuz aniqlanmadi.")
 
-# O'quvchi qo'shish interfeysi
 def create_database_interface():
     def save_to_database():
         name = name_entry.get()
@@ -37,7 +35,7 @@ def create_database_interface():
         if name.strip() and surname.strip() and group.strip() and file_path.strip():
             add_face_to_database(name, surname, group, file_path)
         else:
-            print("Barcha ma'lumotlar to'ldirilishi kerak!")
+            messagebox.showwarning("Ogohlantirish", "Barcha ma'lumotlar to'ldirilishi kerak!")
     def select_file():
         file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
         file_path_var.set(file_path)
@@ -60,7 +58,6 @@ def create_database_interface():
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
     root.mainloop()
 
-# Vaqt tanlash interfeysi
 def get_deadline():
     deadline = None
 
@@ -73,9 +70,9 @@ def get_deadline():
                 deadline = datetime.combine(datetime.now().date(), time(hour, minute))
                 root.destroy()
             else:
-                print("Soat 0-23, daqiqa 0-59 oralig'ida bo'lishi kerak!")
+                messagebox.showwarning("Xato", "Soat 0-23, daqiqa 0-59 oralig'ida bo'lishi kerak!")
         except ValueError:
-            print("Soat va daqiqa raqam bo'lishi kerak!")
+            messagebox.showwarning("Xato", "Soat va daqiqa raqam bo'lishi kerak!")
 
     def set_deadline_by_timer():
         nonlocal deadline
@@ -85,7 +82,6 @@ def get_deadline():
 
     root = tk.Tk()
     root.title("Davomat vaqtini belgilash")
-
     tk.Label(root, text="Ma'lum soatgacha:").pack(padx=20, pady=5)
     tk.Label(root, text="Soat (0-23):").pack(padx=20, pady=5)
     hour_entry = tk.Entry(root)
@@ -94,39 +90,31 @@ def get_deadline():
     minute_entry = tk.Entry(root)
     minute_entry.pack(padx=20, pady=5)
     tk.Button(root, text="Soatni tasdiqlash", command=set_deadline_by_time).pack(padx=20, pady=10)
-
     tk.Label(root, text="Yoki taymer (daqiqa):").pack(padx=20, pady=5)
     timer_choice = tk.StringVar(value="5")
     tk.OptionMenu(root, timer_choice, "5", "10", "15").pack(padx=20, pady=5)
     tk.Button(root, text="Taymerni tasdiqlash", command=set_deadline_by_timer).pack(padx=20, pady=10)
-
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
     root.mainloop()
     return deadline if deadline else datetime.now() + timedelta(minutes=5)
 
-# Yangilangan davomat funksiyasi
 def attendance_system(camera_index):
     global running
     running = True
     cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
     if not cap.isOpened():
-        print("Kamera ochilmadi!")
+        messagebox.showerror("Xato", "Kamera ochilmadi!")
         return
     
-    # Bazani yuklash
     try:
         database = np.load("face_database.npy", allow_pickle=True).item()
-        print("Baza yuklandi.")
+        messagebox.showinfo("Muvaffaqiyat", "Baza yuklandi.")
     except FileNotFoundError:
-        print("Baza topilmadi. Avval o'quvchilarni qo'shing.")
+        messagebox.showerror("Xato", "Baza topilmadi. Avval o'quvchilarni qo'shing.")
         cap.release()
         return
 
-    # Vaqt chegarasini olish
     deadline_datetime = get_deadline()
-    print(f"Davomat chegarasi: {deadline_datetime}")
-
-    # Davomat uchun ro'yxat
     attendance = {name: {"surname": data["surname"], "group": data["group"], "status": "Kelmagan", 
                          "arrival_time": None, "late_time": None} 
                   for name, data in database.items()}
@@ -138,8 +126,8 @@ def attendance_system(camera_index):
         global running
         running = False
         save_attendance(attendance)
-        display_summary(attendance)  # Yakuniy ma'lumotni chiqarish
         root.destroy()
+        display_summary(attendance)
 
     tk.Button(root, text="Davomatni yakunlash", command=stop_program).pack(padx=20, pady=20)
     root.protocol("WM_DELETE_WINDOW", stop_program)
@@ -156,13 +144,13 @@ def attendance_system(camera_index):
             current_time = datetime.now()
             for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
                 name = "Nomalum"
-                color = (0, 0, 255)  # Qizil - aniqlanmaganlar uchun
+                color = (0, 0, 255)
                 status = ""
                 for person_name, person_data in database.items():
                     results = face_recognition.compare_faces([person_data["encoding"]], face_encoding, tolerance=0.5)
                     if results[0]:
                         name = person_name
-                        if attendance[name]["status"] == "Kelmagan":  # Faqat birinchi aniqlashda yangilash
+                        if attendance[name]["status"] == "Kelmagan":
                             if current_time <= deadline_datetime:
                                 attendance[name]["status"] = "Kelgan"
                                 attendance[name]["arrival_time"] = current_time.strftime("%H:%M:%S")
@@ -171,16 +159,16 @@ def attendance_system(camera_index):
                                 attendance[name]["late_time"] = current_time.strftime("%H:%M:%S")
                         status = attendance[name]["status"]
                         if status == "Kelgan":
-                            color = (0, 255, 0)  # Yashil
+                            color = (0, 255, 0)
                         elif status == "Kech qolgan":
-                            color = (255, 165, 0)  # To'q sariq
+                            color = (255, 165, 0)
                         break
                 cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
                 cv2.putText(frame, f"{name} ({status})", (left, top - 10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
             
             cv2.imshow('Davomat', frame)
-            if cv2.waitKey(1) & 0xFF == 27:  # Esc tugmasi
+            if cv2.waitKey(1) & 0xFF == 27:
                 stop_program()
             root.update()
 
@@ -196,26 +184,36 @@ def attendance_system(camera_index):
             for name, data in attendance_data.items()
         ])
         df.to_excel(filename, index=False)
-        print(f"Davomat {filename} fayliga saqlandi!")
+        messagebox.showinfo("Muvaffaqiyat", f"Davomat {filename} fayliga saqlandi!")
 
-    # Yangi funksiya: Yakuniy ma'lumotni ekranga chiqarish
     def display_summary(attendance_data):
-        print("\n=== Davomat yakuni ===")
-        print("Kelganlar:")
+        summary_window = tk.Tk()
+        summary_window.title("Davomat yakuni")
+        
+        summary_text = tk.Text(summary_window, height=20, width=60)
+        summary_text.pack(padx=10, pady=10)
+        
+        summary_text.insert(tk.END, "=== Davomat yakuni ===\n\n")
+        summary_text.insert(tk.END, "Kelganlar:\n")
         for name, data in attendance_data.items():
             if data["status"] == "Kelgan":
-                print(f"- {name} {data['surname']} ({data['group']}) - {data['arrival_time']}")
+                summary_text.insert(tk.END, f"- {name} {data['surname']} ({data['group']}) - {data['arrival_time']}\n")
         
-        print("\nKech qolganlar:")
+        summary_text.insert(tk.END, "\nKech qolganlar:\n")
         for name, data in attendance_data.items():
             if data["status"] == "Kech qolgan":
-                print(f"- {name} {data['surname']} ({data['group']}) - {data['late_time']}")
+                summary_text.insert(tk.END, f"- {name} {data['surname']} ({data['group']}) - {data['late_time']}\n")
         
-        print("\nKelmaganlar:")
+        summary_text.insert(tk.END, "\nKelmaganlar:\n")
         for name, data in attendance_data.items():
             if data["status"] == "Kelmagan":
-                print(f"- {name} {data['surname']} ({data['group']})")
-        print("=====================\n")
+                summary_text.insert(tk.END, f"- {name} {data['surname']} ({data['group']})\n")
+        
+        summary_text.insert(tk.END, "=====================\n")
+        summary_text.config(state="disabled")
+        
+        tk.Button(summary_window, text="Yopish", command=summary_window.destroy).pack(pady=10)
+        summary_window.mainloop()
 
     threading.Thread(target=video_loop, daemon=True).start()
     root.mainloop()
@@ -235,13 +233,28 @@ def create_camera_selection_interface():
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
     root.mainloop()
 
+def main_interface():
+    def select_option():
+        choice = choice_var.get()
+        root.destroy()
+        if choice == "1":
+            create_database_interface()
+        elif choice == "2":
+            create_camera_selection_interface()
+        else:
+            messagebox.showwarning("Xato", "Noto'g'ri tanlov!")
+    
+    root = tk.Tk()
+    root.title("Davomat dasturi")
+    
+    tk.Label(root, text="Tanlov qiling:").pack(padx=20, pady=10)
+    choice_var = tk.StringVar(value="")
+    tk.Radiobutton(root, text="1. O'quvchi qo'shish", variable=choice_var, value="1").pack(padx=20, pady=5)
+    tk.Radiobutton(root, text="2. Davomatni boshlash", variable=choice_var, value="2").pack(padx=20, pady=5)
+    tk.Button(root, text="Tasdiqlash", command=select_option).pack(padx=20, pady=10)
+    tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
+    
+    root.mainloop()
+
 if __name__ == "__main__":
-    print("1. O'quvchi qo'shish uchun - 1")
-    print("2. Davomatni boshlash uchun - 2")
-    choice = input("Tanlov: ")
-    if choice == "1":
-        create_database_interface()
-    elif choice == "2":
-        create_camera_selection_interface()
-    else:
-        print("Noto'g'ri tanlov!")
+    main_interface()
