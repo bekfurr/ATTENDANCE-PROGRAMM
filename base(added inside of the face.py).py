@@ -6,16 +6,14 @@ from tkinter import filedialog
 import os
 
 def add_face_to_database(name, surname, age, file_path):
-    """
-    Yangi yuz xususiyatini va foydalanuvchi ma'lumotlarini baza fayliga qo'shish.
-    """
-    # Suratni yuklash va yuz xususiyatlarini aniqlash
+
+
     rgb_image = cv2.cvtColor(cv2.imread(file_path), cv2.COLOR_BGR2RGB)
     face_locations = face_recognition.face_locations(rgb_image, model="cnn")
     if face_locations:
         encoding = face_recognition.face_encodings(rgb_image, face_locations)[0]
         
-        # Baza fayli mavjudligini tekshirish
+      
         if os.path.exists("face_database.npy"):
             try:
                 database = np.load("face_database.npy", allow_pickle=True).item()
@@ -25,7 +23,7 @@ def add_face_to_database(name, surname, age, file_path):
         else:
             database = {}
 
-        # Foydalanuvchi ma'lumotlarini saqlash
+   
         database[name] = {
             "surname": surname,
             "age": age,
@@ -37,9 +35,7 @@ def add_face_to_database(name, surname, age, file_path):
         print("Yuz aniqlanmadi. Suratni tekshiring.")
 
 def create_database_interface():
-    """
-    Tkinter interfeys orqali foydalanuvchi ma'lumotlarini kiritish va surat faylini tanlash.
-    """
+   
     def save_to_database():
         name = name_entry.get()
         surname = surname_entry.get()
@@ -80,5 +76,5 @@ def create_database_interface():
     
     root.mainloop()
 
-# Tkinter interfeysini ishga tushirish
+
 create_database_interface()
