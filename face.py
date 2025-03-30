@@ -40,6 +40,7 @@ def create_database_interface():
         file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
         file_path_var.set(file_path)
     root = tk.Tk()
+    root.geometry("300x450")
     root.title("O'quvchi qo'shish")
     tk.Label(root, text="Ism:").pack(padx=20, pady=5)
     name_entry = tk.Entry(root)
@@ -81,6 +82,7 @@ def get_deadline():
         root.destroy()
 
     root = tk.Tk()
+    root.geometry("300x400")
     root.title("Davomat vaqtini belgilash")
     tk.Label(root, text="Ma'lum soatgacha:").pack(padx=20, pady=5)
     tk.Label(root, text="Soat (0-23):").pack(padx=20, pady=5)
@@ -120,6 +122,7 @@ def attendance_system(camera_index):
                   for name, data in database.items()}
 
     root = tk.Tk()
+    root.geometry("500x100")
     root.title("Davomat tizimi")
     
     def stop_program():
@@ -225,6 +228,8 @@ def create_camera_selection_interface():
         attendance_system(camera_index)
     
     root = tk.Tk()
+    root.geometry("300x350")
+
     root.title("Kamera tanlash")
     tk.Label(root, text="Kamerani tanlang:").pack(padx=20, pady=5)
     camera_choice = tk.StringVar(value="0")
@@ -245,6 +250,7 @@ def main_interface():
             messagebox.showwarning("Xato", "Noto'g'ri tanlov!")
     
     root = tk.Tk()
+    root.geometry("300x350")
     root.title("Davomat dasturi")
     
     tk.Label(root, text="Tanlov qiling:").pack(padx=20, pady=10)
