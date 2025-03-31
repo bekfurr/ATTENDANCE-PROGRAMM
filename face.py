@@ -36,9 +36,11 @@ def create_database_interface():
             add_face_to_database(name, surname, group, file_path)
         else:
             messagebox.showwarning("Ogohlantirish", "Barcha ma'lumotlar to'ldirilishi kerak!")
+    
     def select_file():
         file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
         file_path_var.set(file_path)
+    
     root = tk.Tk()
     root.geometry("300x450")
     root.title("O'quvchi qo'shish")
@@ -58,6 +60,28 @@ def create_database_interface():
     tk.Button(root, text="Saqlash", command=save_to_database).pack(padx=20, pady=10)
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
     root.mainloop()
+
+def get_camera_name(index):
+ 
+    try:
+        cap = cv2.VideoCapture(index)
+        if cap.isOpened():
+            name = f"Kamera {index}"
+            cap.release()
+            return f"{name} (Indeks: {index})"
+        cap.release()
+    except Exception as e:
+        print(f"Kamera {index} ni tekshirishda xato: {e}")
+    return None
+
+def detect_available_cameras(max_index=3):
+    
+    available_cameras = []
+    for i in range(max_index):
+        camera_name = get_camera_name(i)
+        if camera_name:
+            available_cameras.append((i, camera_name))
+    return available_cameras
 
 def get_deadline():
     deadline = None
@@ -100,12 +124,72 @@ def get_deadline():
     root.mainloop()
     return deadline if deadline else datetime.now() + timedelta(minutes=5)
 
-def attendance_system(camera_index):
+def create_camera_selection_interface():
+    def start_attendance():
+        selected_option = camera_choice.get()
+        ip_url = None
+        if selected_option == "IP Camera":
+            ip_url = ip_entry.get().strip()
+            if not ip_url:
+                messagebox.showwarning("Xato", "IP kamera URL kiritilmadi!")
+                return
+        root.destroy()
+        if selected_option == "IP Camera":
+            attendance_system(ip_url)
+        else:
+            try:
+                camera_index = int(selected_option.split(" (Indeks: ")[1].rstrip(")"))
+                attendance_system(camera_index)
+            except Exception as e:
+                messagebox.showerror("Xato", f"Kamera tanlashda xato: {e}")
+
+    root = tk.Tk()
+    root.geometry("400x450")
+    root.title("Kamera tanlash")
+
+    available_cameras = detect_available_cameras()
+    if not available_cameras:
+        messagebox.showwarning("Ogohlantirish", "Hech qanday kamera topilmadi!")
+        available_cameras = [(0, "Standart kamera (Indeks: 0)")]
+
+    tk.Label(root, text="Kamerani tanlang:").pack(padx=20, pady=5)
+    camera_choice = tk.StringVar(value=available_cameras[0][1])
+    camera_options = [cam[1] for cam in available_cameras] + ["IP Camera"]
+    tk.OptionMenu(root, camera_choice, *camera_options).pack(padx=20, pady=5)
+
+    tk.Label(root, text="Agar IP Camera tanlansa, URL kiriting:").pack(padx=20, pady=5)
+    tk.Label(root, text="Masalan: http://192.168.1.100:4747/video").pack(padx=20, pady=5)
+    ip_entry = tk.Entry(root, width=40)
+    ip_entry.pack(padx=20, pady=5)
+    ip_entry.insert(0, "")
+
+    tk.Button(root, text="Davomatni boshlash", command=start_attendance).pack(padx=20, pady=10)
+    tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
+
+    def toggle_ip_entry(*args):
+        if camera_choice.get() == "IP Camera":
+            ip_entry.config(state="normal")
+        else:
+            ip_entry.config(state="disabled")
+    
+    camera_choice.trace("w", toggle_ip_entry)
+    ip_entry.config(state="disabled")
+
+    root.mainloop()
+
+def attendance_system(camera_source):
     global running
     running = True
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+    
+    if isinstance(camera_source, str):
+        print(f"IP kamera URL: {camera_source}")
+        cap = cv2.VideoCapture(camera_source)
+    else:
+        print(f"Kamera indeksi: {camera_source}")
+        cap = cv2.VideoCapture(camera_source)
+    
     if not cap.isOpened():
-        messagebox.showerror("Xato", "Kamera ochilmadi!")
+        messagebox.showerror("Xato", "Kamera ochilmadi! URL yoki indeksni tekshiring.")
         return
     
     try:
@@ -139,6 +223,7 @@ def attendance_system(camera_index):
         while running:
             ret, frame = cap.read()
             if not ret:
+                print("Kadr olishda xato yuz berdi.")
                 continue
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             face_locations = face_recognition.face_locations(rgb_frame)
@@ -219,23 +304,6 @@ def attendance_system(camera_index):
         summary_window.mainloop()
 
     threading.Thread(target=video_loop, daemon=True).start()
-    root.mainloop()
-
-def create_camera_selection_interface():
-    def start_attendance():
-        camera_index = int(camera_choice.get())
-        root.destroy()
-        attendance_system(camera_index)
-    
-    root = tk.Tk()
-    root.geometry("300x350")
-
-    root.title("Kamera tanlash")
-    tk.Label(root, text="Kamerani tanlang:").pack(padx=20, pady=5)
-    camera_choice = tk.StringVar(value="0")
-    tk.OptionMenu(root, camera_choice, "0", "1", "2").pack(padx=20, pady=5)
-    tk.Button(root, text="Davomatni boshlash", command=start_attendance).pack(padx=20, pady=10)
-    tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
     root.mainloop()
 
 def main_interface():
