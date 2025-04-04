@@ -8,61 +8,102 @@ import threading
 import pandas as pd
 from datetime import datetime, time, timedelta
 
-def add_face_to_database(name, surname, group, file_path):
-    rgb_image = cv2.cvtColor(cv2.imread(file_path), cv2.COLOR_BGR2RGB)
-    face_locations = face_recognition.face_locations(rgb_image, model="cnn")
-    if face_locations:
-        encoding = face_recognition.face_encodings(rgb_image, face_locations)[0]
-        if os.path.exists("face_database.npy"):
-            try:
-                database = np.load("face_database.npy", allow_pickle=True).item()
-            except ValueError:
-                database = {}
+def add_face_to_database(name, surname, father_name, faculty, direction, group, file_paths):
+    encodings = []
+    for file_path in file_paths:
+        rgb_image = cv2.cvtColor(cv2.imread(file_path), cv2.COLOR_BGR2RGB)
+        face_locations = face_recognition.face_locations(rgb_image, model="cnn")
+        if face_locations:
+            encoding = face_recognition.face_encodings(rgb_image, face_locations)[0]
+            encodings.append(encoding)
         else:
+            messagebox.showwarning("Ogohlantirish", f"{file_path} faylida yuz aniqlanmadi.")
+    
+    if not encodings:
+        messagebox.showerror("Xato", "Hech bir suratda yuz aniqlanmadi.")
+        return
+    
+    if os.path.exists("face_database.npy"):
+        try:
+            database = np.load("face_database.npy", allow_pickle=True).item()
+        except ValueError:
             database = {}
-        database[name] = {"surname": surname, "group": group, "encoding": encoding}
-        np.save("face_database.npy", database)
-        messagebox.showinfo("Muvaffaqiyat", f"{name} muvaffaqiyatli qo'shildi!")
     else:
-        messagebox.showerror("Xato", "Yuz aniqlanmadi.")
+        database = {}
+    
+    database[name] = {
+        "surname": surname,
+        "father_name": father_name,
+        "faculty": faculty,
+        "direction": direction,
+        "group": group,
+        "encodings": encodings
+    }
+    np.save("face_database.npy", database)
+    messagebox.showinfo("Muvaffaqiyat", f"{name} muvaffaqiyatli qo'shildi!")
 
 def create_database_interface():
     def save_to_database():
         name = name_entry.get()
         surname = surname_entry.get()
+        father_name = father_name_entry.get()
+        faculty = faculty_entry.get()
+        direction = direction_entry.get()
         group = group_entry.get()
-        file_path = file_path_var.get()
-        if name.strip() and surname.strip() and group.strip() and file_path.strip():
-            add_face_to_database(name, surname, group, file_path)
+        file_paths = file_paths_var.get().split(";")
+        
+        if all(field.strip() for field in [name, surname, father_name, faculty, direction, group]) and file_paths[0]:
+            add_face_to_database(name, surname, father_name, faculty, direction, group, file_paths)
         else:
             messagebox.showwarning("Ogohlantirish", "Barcha ma'lumotlar to'ldirilishi kerak!")
     
-    def select_file():
-        file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
-        file_path_var.set(file_path)
+    def select_files():
+        file_paths = filedialog.askopenfilenames(filetypes=[("Image files", "*.jpg;*.jpeg;*.png")])
+        if file_paths:
+            file_paths_var.set(";".join(file_paths))
     
     root = tk.Tk()
-    root.geometry("300x450")
+    root.geometry("300x600")
     root.title("O'quvchi qo'shish")
+    
     tk.Label(root, text="Ism:").pack(padx=20, pady=5)
     name_entry = tk.Entry(root)
     name_entry.pack(padx=20, pady=5)
+    
     tk.Label(root, text="Familiya:").pack(padx=20, pady=5)
     surname_entry = tk.Entry(root)
     surname_entry.pack(padx=20, pady=5)
+    
+    tk.Label(root, text="Otasining ismi:").pack(padx=20, pady=5)
+    father_name_entry = tk.Entry(root)
+    father_name_entry.pack(padx=20, pady=5)
+    
+    tk.Label(root, text="Fakultet:").pack(padx=20, pady=5)
+    faculty_entry = tk.Entry(root)
+    faculty_entry.pack(padx=20, pady=5)
+    
+    tk.Label(root, text="Yo'nalish:").pack(padx=20, pady=5)
+    direction_entry = tk.Entry(root)
+    direction_entry.pack(padx=20, pady=5)
+    
     tk.Label(root, text="Guruh:").pack(padx=20, pady=5)
     group_entry = tk.Entry(root)
     group_entry.pack(padx=20, pady=5)
-    tk.Label(root, text="Surat:").pack(padx=20, pady=5)
-    file_path_var = tk.StringVar()
-    tk.Button(root, text="Fayl tanlash", command=select_file).pack(padx=20, pady=5)
-    tk.Entry(root, textvariable=file_path_var, state="readonly").pack(padx=20, pady=5)
+    
+    tk.Label(root, text="Suratlar:").pack(padx=20, pady=5)
+    file_paths_var = tk.StringVar()
+    tk.Button(root, text="Fayllarni tanlash", command=select_files).pack(padx=20, pady=5)
+    tk.Entry(root, textvariable=file_paths_var, state="readonly").pack(padx=20, pady=5)
+    
     tk.Button(root, text="Saqlash", command=save_to_database).pack(padx=20, pady=10)
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
+    
+    copyright_label = tk.Label(root, text="BEKFURR INC 2025", font=("Arial", 8), fg="gray")
+    copyright_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
+    
     root.mainloop()
 
 def get_camera_name(index):
- 
     try:
         cap = cv2.VideoCapture(index)
         if cap.isOpened():
@@ -75,7 +116,6 @@ def get_camera_name(index):
     return None
 
 def detect_available_cameras(max_index=3):
-    
     available_cameras = []
     for i in range(max_index):
         camera_name = get_camera_name(i)
@@ -121,6 +161,10 @@ def get_deadline():
     tk.OptionMenu(root, timer_choice, "5", "10", "15").pack(padx=20, pady=5)
     tk.Button(root, text="Taymerni tasdiqlash", command=set_deadline_by_timer).pack(padx=20, pady=10)
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
+    
+    copyright_label = tk.Label(root, text="BEKFURR INC 2025", font=("Arial", 8), fg="gray")
+    copyright_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
+    
     root.mainloop()
     return deadline if deadline else datetime.now() + timedelta(minutes=5)
 
@@ -174,7 +218,10 @@ def create_camera_selection_interface():
     
     camera_choice.trace("w", toggle_ip_entry)
     ip_entry.config(state="disabled")
-
+    
+    copyright_label = tk.Label(root, text="BEKFURR INC 2025", font=("Arial", 8), fg="gray")
+    copyright_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
+    
     root.mainloop()
 
 def attendance_system(camera_source):
@@ -201,9 +248,19 @@ def attendance_system(camera_source):
         return
 
     deadline_datetime = get_deadline()
-    attendance = {name: {"surname": data["surname"], "group": data["group"], "status": "Kelmagan", 
-                         "arrival_time": None, "late_time": None} 
-                  for name, data in database.items()}
+    attendance = {
+        name: {
+            "surname": data["surname"],
+            "father_name": data["father_name"],
+            "faculty": data["faculty"],
+            "direction": data["direction"],
+            "group": data["group"],
+            "status": "Kelmagan",
+            "arrival_time": None,
+            "late_time": None
+        } 
+        for name, data in database.items()
+    }
 
     root = tk.Tk()
     root.geometry("500x100")
@@ -218,6 +275,9 @@ def attendance_system(camera_source):
 
     tk.Button(root, text="Davomatni yakunlash", command=stop_program).pack(padx=20, pady=20)
     root.protocol("WM_DELETE_WINDOW", stop_program)
+    
+    copyright_label = tk.Label(root, text="BEKFURR INC 2025", font=("Arial", 8), fg="gray")
+    copyright_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
 
     def video_loop():
         while running:
@@ -235,8 +295,8 @@ def attendance_system(camera_source):
                 color = (0, 0, 255)
                 status = ""
                 for person_name, person_data in database.items():
-                    results = face_recognition.compare_faces([person_data["encoding"]], face_encoding, tolerance=0.5)
-                    if results[0]:
+                    results = face_recognition.compare_faces(person_data["encodings"], face_encoding, tolerance=0.5)
+                    if any(results):
                         name = person_name
                         if attendance[name]["status"] == "Kelmagan":
                             if current_time <= deadline_datetime:
@@ -251,6 +311,7 @@ def attendance_system(camera_source):
                         elif status == "Kech qolgan":
                             color = (255, 165, 0)
                         break
+                
                 cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
                 cv2.putText(frame, f"{name} ({status})", (left, top - 10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
@@ -267,8 +328,17 @@ def attendance_system(camera_source):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"attendance_{timestamp}.xlsx"
         df = pd.DataFrame([
-            {"Ism": name, "Familiya": data["surname"], "Guruh": data["group"], "Holati": data["status"],
-             "Kelgan vaqti": data["arrival_time"], "Kech qolgan vaqti": data["late_time"]}
+            {
+                "Ism": name,
+                "Familiya": data["surname"],
+                "Otasining ismi": data["father_name"],
+                "Fakultet": data["faculty"],
+                "Yo'nalish": data["direction"],
+                "Guruh": data["group"],
+                "Holati": data["status"],
+                "Kelgan vaqti": data["arrival_time"],
+                "Kech qolgan vaqti": data["late_time"]
+            }
             for name, data in attendance_data.items()
         ])
         df.to_excel(filename, index=False)
@@ -278,29 +348,38 @@ def attendance_system(camera_source):
         summary_window = tk.Tk()
         summary_window.title("Davomat yakuni")
         
-        summary_text = tk.Text(summary_window, height=20, width=60)
+        summary_text = tk.Text(summary_window, height=20, width=80)
         summary_text.pack(padx=10, pady=10)
         
         summary_text.insert(tk.END, "=== Davomat yakuni ===\n\n")
         summary_text.insert(tk.END, "Kelganlar:\n")
         for name, data in attendance_data.items():
             if data["status"] == "Kelgan":
-                summary_text.insert(tk.END, f"- {name} {data['surname']} ({data['group']}) - {data['arrival_time']}\n")
+                summary_text.insert(tk.END, f"- {name} {data['surname']} {data['father_name']} "
+                                          f"({data['faculty']}, {data['direction']}, {data['group']}) - "
+                                          f"{data['arrival_time']}\n")
         
         summary_text.insert(tk.END, "\nKech qolganlar:\n")
         for name, data in attendance_data.items():
             if data["status"] == "Kech qolgan":
-                summary_text.insert(tk.END, f"- {name} {data['surname']} ({data['group']}) - {data['late_time']}\n")
+                summary_text.insert(tk.END, f"- {name} {data['surname']} {data['father_name']} "
+                                          f"({data['faculty']}, {data['direction']}, {data['group']}) - "
+                                          f"{data['late_time']}\n")
         
         summary_text.insert(tk.END, "\nKelmaganlar:\n")
         for name, data in attendance_data.items():
             if data["status"] == "Kelmagan":
-                summary_text.insert(tk.END, f"- {name} {data['surname']} ({data['group']})\n")
+                summary_text.insert(tk.END, f"- {name} {data['surname']} {data['father_name']} "
+                                          f"({data['faculty']}, {data['direction']}, {data['group']})\n")
         
         summary_text.insert(tk.END, "=====================\n")
         summary_text.config(state="disabled")
         
         tk.Button(summary_window, text="Yopish", command=summary_window.destroy).pack(pady=10)
+        
+        copyright_label = tk.Label(summary_window, text="BEKFURR INC 2025", font=("Arial", 8), fg="gray")
+        copyright_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
+        
         summary_window.mainloop()
 
     threading.Thread(target=video_loop, daemon=True).start()
@@ -327,6 +406,9 @@ def main_interface():
     tk.Radiobutton(root, text="2. Davomatni boshlash", variable=choice_var, value="2").pack(padx=20, pady=5)
     tk.Button(root, text="Tasdiqlash", command=select_option).pack(padx=20, pady=10)
     tk.Button(root, text="Chiqish", command=root.destroy).pack(padx=20, pady=10)
+    
+    copyright_label = tk.Label(root, text="BEKFURR INC 2025", font=("Arial", 8), fg="gray")
+    copyright_label.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)
     
     root.mainloop()
 
