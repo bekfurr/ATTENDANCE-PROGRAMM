@@ -1,25 +1,77 @@
-# PEOPLE ATTENDANCE WITH FACE DETECTION
+📸 Advanced People Attendance System with Face Detection and Scheduling
+Welcome to the Advanced People Attendance System – a powerful and user-friendly application built with Python and OpenCV that uses real-time face recognition to manage and monitor attendance, complete with a GUI, scheduling features, and email reporting.
 
-🎉 **Welcome to People Attendance with Face Detection!** 🎉  
-This project leverages modern face recognition technology to streamline attendance tracking for events, workplaces, or any group setting. By integrating **real-time face detection**, it offers a seamless and efficient way to record attendance automatically.
+🎯 Key Features
+Face Recognition-Based Attendance: Accurately recognizes individuals and logs attendance automatically.
 
-## 🚀 Features
-- **Face Recognition:** Accurately identifies and verifies individuals using facial features.
-- **Real-time Detection:** Integrates with live camera feeds for immediate attendance updates.
-- **Attendance Logs:** Automatically updates attendance records for efficient tracking.
-- **Customizable:** Flexible design to adapt to different scenarios and environments.
+Manual and Scheduled Modes: Supports both on-demand and timetable-based attendance sessions.
 
-## 🛠️ Technology Stack
-- **Language:** Python
-- **Libraries:** OpenCV, face_recognition, NumPy, etc.
-- **Hardware:** Supports standard webcams or IP cameras.
+Late Detection: Defines late time and attendance deadline either via time or timer.
 
-## 🌟 How It Works
-1. **Set Up Camera**: Connect a webcam or compatible IP camera.
-2. **Run the Script**: Launch the `face.py` script to start real-time detection.
-3. **Attend Smarter**: The system recognizes faces and logs attendance automatically.
+Excel Export: Automatically saves attendance reports as .xlsx files.
 
-## 📂 Usage
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/bekfurr/PEOPLE-ATTENDANCE-WITH-FACE-DETECTION.git
+GUI (Tkinter): Fully interactive desktop interface with menus for each major feature.
+
+Camera Support: Works with both local webcams and IP cameras.
+
+Contacts & Email Integration: Add contacts and send attendance reports via email.
+
+Schedule Management: Weekly class schedule builder for automated tracking.
+
+🛠️ Tech Stack
+Language: Python
+
+Libraries: OpenCV, face_recognition, NumPy, Pandas, Tkinter, Schedule
+
+Others: SMTP for sending emails, JSON for configuration, Excel (via pandas) for reports
+
+🖥️ How to Use
+Install Requirements:
+
+bash
+Copy
+Edit
+pip install opencv-python face_recognition numpy pandas schedule
+Run the App:
+
+bash
+Copy
+Edit
+python code.py
+Main Menu Options:
+
+Create face database with at least 4 images per person.
+
+Start attendance manually or schedule it via built-in timetable.
+
+Set late time and end time (fixed or timer-based).
+
+Send attendance reports directly from the app via email.
+
+💾 Output
+Attendance report is automatically saved as .xlsx in the current directory.
+
+Report includes name, faculty, group, status (on time, late, absent), and arrival time.
+
+📩 Email Integration
+Add contact emails and configure SMTP settings.
+
+Easily select a report and recipient to send attendance summaries with attachments.
+
+📅 Weekly Scheduling
+Customize start, late, and end times for each day of the week.
+
+Automatically runs attendance based on that schedule.
+
+📚 File Structure
+pgsql
+Copy
+Edit
+├── code.py
+├── face_database.npy
+├── contacts.json
+├── smtp_settings.json
+├── attendance_YYYY-MM-DD_HH-MM-SS.xlsx
+🏷️ Author
+Bekfurr Inc – 2025
+This system was built with the aim to improve institutional attendance tracking using face detection technology and intuitive tools.
