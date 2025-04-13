@@ -2,39 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Advanced People Attendance System</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      line-height: 1.6;
-      background-color: #f9f9f9;
-      color: #333;
-      max-width: 900px;
-      margin: auto;
-      padding: 20px;
-    }
-    h1, h2, h3 {
-      color: #2c3e50;
-    }
-    code {
-      background-color: #eee;
-      padding: 2px 4px;
-      border-radius: 4px;
-      font-family: monospace;
-    }
-    pre {
-      background-color: #f4f4f4;
-      padding: 10px;
-      overflow-x: auto;
-    }
-    .tag {
-      background-color: #e1ecf4;
-      color: #0366d6;
-      padding: 3px 6px;
-      border-radius: 3px;
-      font-size: 0.9em;
-    }
-  </style>
+
 </head>
 <body>
 
