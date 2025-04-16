@@ -246,16 +246,14 @@ class AttendanceApp:
             frame = ttk.Frame(self.current_frame)
             frame.pack(fill="x", pady=2)
             
-         
             ttk.Label(frame, text="Boshlanish vaqti (HH:MM):", width=20).pack(side="left")
             start_entry = ttk.Entry(frame, width=10)
             start_entry.pack(side="left", padx=5)
-     
+            
             ttk.Label(frame, text="Kech qolish (HH:MM):", width=20).pack(side="left")
             late_entry = ttk.Entry(frame, width=10)
             late_entry.pack(side="left", padx=5)
             
-
             ttk.Label(frame, text="Tugash vaqti (HH:MM):", width=20).pack(side="left")
             end_entry = ttk.Entry(frame, width=10)
             end_entry.pack(side="left", padx=5)
@@ -280,7 +278,6 @@ class AttendanceApp:
             late_time = self.schedule_entries[day]["late"].get()
             end_time = self.schedule_entries[day]["end"].get()
             
-            # Vaqt formatini tekshirish
             try:
                 if start_time:
                     datetime.strptime(start_time, "%H:%M")
@@ -292,7 +289,6 @@ class AttendanceApp:
                 messagebox.showwarning("Ogohlantirish", f"{day} kuni uchun vaqt formati noto'g'ri! (HH:MM, masalan, 09:00)")
                 return
             
-  
             if start_time and late_time and end_time:
                 schedule_data[day] = {
                     "start": start_time,
@@ -304,7 +300,6 @@ class AttendanceApp:
             messagebox.showwarning("Ogohlantirish", "Kamida bir kun uchun jadval kiritilishi kerak!")
             return
         
-
         file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
         if file_path:
             with open(file_path, 'w') as f:
@@ -781,7 +776,7 @@ class AttendanceApp:
             self.cap.release()
         cv2.destroyAllWindows()
         self.save_attendance()
-        self.show_summary()
+        self.show_email_contact_selection()
 
     def save_attendance(self):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -802,6 +797,92 @@ class AttendanceApp:
         ])
         df.to_excel(self.filename, index=False)
         self.attendance_data = self.attendance
+
+    def show_email_contact_selection(self):
+        if self.current_frame:
+            self.current_frame.destroy()
+            
+        self.current_frame = ttk.Frame(self.root)
+        self.current_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ttk.Label(self.current_frame, text="Hisobotni Email orqali Yuborish",
+                 font=("Helvetica", 18, "bold")).pack(pady=10)
+        
+        if not self.contacts:
+            ttk.Label(self.current_frame, text="Kontaktlar mavjud emas! Iltimos, Kontaktlar bo'limida kontakt qo'shing.",
+                     font=("Helvetica", 12, "italic"), foreground="red").pack(pady=10)
+            ttk.Button(self.current_frame, text="Bosh menyuga",
+                      command=self.create_main_interface).pack(pady=10)
+            return
+        
+        if not self.smtp_settings:
+            ttk.Label(self.current_frame, text="SMTP sozlamalari kiritilmagan! Iltimos, SMTP Sozlamalari bo'limida sozlamalarni kiriting.",
+                     font=("Helvetica", 12, "italic"), foreground="red").pack(pady=10)
+            ttk.Button(self.current_frame, text="Bosh menyuga",
+                      command=self.create_main_interface).pack(pady=10)
+            return
+        
+        ttk.Label(self.current_frame, text="Qabul Qiluvchi Tanlash",
+                 font=("Helvetica", 14, "bold")).pack(pady=5)
+        
+        contact_frame = ttk.Frame(self.current_frame)
+        contact_frame.pack(fill="x", pady=5)
+        ttk.Label(contact_frame, text="Kontakt:", width=15).pack(side="left")
+        self.contact_choice = tk.StringVar()
+        contact_options = list(self.contacts.keys())
+        self.contact_menu = ttk.OptionMenu(contact_frame, self.contact_choice,
+                                          contact_options[0] if contact_options else "Kontaktlar mavjud emas",
+                                          *contact_options)
+        self.contact_menu.pack(fill="x", expand=True, padx=5)
+        
+        ttk.Button(self.current_frame, text="Email Jo'natish",
+                  command=self.send_email_after_attendance).pack(pady=10)
+        ttk.Button(self.current_frame, text="O'tkazib Yuborish",
+                  command=self.show_summary).pack(pady=5)
+
+    def send_email_after_attendance(self):
+        contact_name = self.contact_choice.get()
+        if contact_name not in self.contacts:
+            messagebox.showwarning("Ogohlantirish", "Kontaktni tanlang!")
+            return
+        
+        sender = self.smtp_settings["email"]
+        receiver = self.contacts[contact_name]["email"]
+        smtp_server = self.smtp_settings["smtp_server"]
+        smtp_port = self.smtp_settings["smtp_port"]
+        password = self.smtp_settings["password"]
+        
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = receiver
+        msg['Subject'] = f"Davomat Hisoboti {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        body = "Davomat hisoboti ilova sifatida yuborildi."
+        msg.attach(MIMEText(body, 'plain'))
+        
+        try:
+            with open(self.filename, "rb") as attachment:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(attachment.read())
+            
+            encoders.encode_base64(part)
+            part.add_header(
+                "Content-Disposition",
+                f"attachment; filename= {os.path.basename(self.filename)}"
+            )
+            msg.attach(part)
+            
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()
+            server.login(sender, password)
+            text = msg.as_string()
+            server.sendmail(sender, receiver, text)
+            server.quit()
+            messagebox.showinfo("Muvaffaqiyat", "Hisobot email orqali yuborildi!")
+            self.show_summary()
+        except Exception as e:
+            messagebox.showerror("Xato", f"Email yuborishda xato: {e}")
+            self.show_summary()
 
     def show_summary(self):
         if self.current_frame:
@@ -1052,7 +1133,7 @@ class AttendanceApp:
         msg['To'] = receiver
         msg['Subject'] = f"Davomat Hisoboti {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
-        body = "Davomat his*rastgele*oboti ilova sifatida yuborildi."
+        body = f"Davomat hisoboti ilova sifatida yuborildi.HISOBOT VAQTI:{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         msg.attach(MIMEText(body, 'plain'))
         
         try:
