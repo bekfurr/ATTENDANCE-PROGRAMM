@@ -363,8 +363,8 @@ class AttendanceApp:
         cameras = self.detect_available_cameras()
         camera_options = [cam[1] for cam in cameras] + ["IP Camera"]
         self.camera_menu = ttk.OptionMenu(cam_frame, self.camera_choice,
-                                       cameras[0][1] if cameras else "Kamera topilmadi",
-                                       *camera_options)
+                                         cameras[0][1] if cameras else "Kamera topilmadi",
+                                         *camera_options)
         self.camera_menu.pack(fill="x", expand=True, padx=5)
         
         ip_frame = ttk.Frame(scrollable_frame)
@@ -374,7 +374,7 @@ class AttendanceApp:
         self.ip_entry.pack(fill="x", expand=True, padx=5)
         self.ip_entry.config(state="disabled")
         
-        ttk.Label(scrollable_frame, text="Kech qolish chegarasi:", font=("Helvetica", 12, "bold")).pack(pady=5)
+        ttk.Label(scrollable_frame, text="Kech qolish chegarasi:", font=("Helvetica", 12, "bold")).pack(pady=10)
         late_deadline_frame = ttk.Frame(scrollable_frame)
         late_deadline_frame.pack(fill="x", pady=5)
         
@@ -397,7 +397,7 @@ class AttendanceApp:
         self.late_deadline_var = tk.StringVar(value="5")
         ttk.OptionMenu(self.late_timer_frame, self.late_deadline_var, "5", "10", "15", "30").pack(side="left", padx=5)
         
-        ttk.Label(scrollable_frame, text="Davomat tugash vaqti:", font=("Helvetica", 12, "bold")).pack(pady=5)
+        ttk.Label(scrollable_frame, text="Davomat tugash vaqti:", font=("Helvetica", 12, "bold")).pack(pady=10)
         deadline_frame = ttk.Frame(scrollable_frame)
         deadline_frame.pack(fill="x", pady=5)
         
@@ -500,6 +500,16 @@ class AttendanceApp:
                 pass
         return available_cameras
 
+    def calculate_statistics(self, distances):
+        if not distances:
+            return 0.0, 0.0, 0.0
+        
+        mean = np.mean(distances)
+        variance = np.var(distances)
+        std_dev = np.sqrt(variance)
+        
+        return mean, variance, std_dev
+
     def start_attendance(self):
         if not self.db_select_var.get():
             messagebox.showwarning("Xato", "Baza tanlanmadi!")
@@ -570,32 +580,125 @@ class AttendanceApp:
             if not self.schedule_file or not self.schedule_data:
                 messagebox.showwarning("Xato", "Jadval fayli tanlanmadi yoki noto'g'ri!")
                 return
-            self.run_scheduled_attendance(camera_source)
+            self.running = True
+            threading.Thread(target=self.run_scheduled_attendance, args=(camera_source,), daemon=True).start()
 
     def run_scheduled_attendance(self, camera_source):
-        def check_schedule():
-            if not self.running:
-                return schedule.CancelJob
+        if self.current_frame:
+            self.current_frame.destroy()
+            
+        self.current_frame = ttk.Frame(self.root)
+        self.current_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ttk.Label(self.current_frame, text="Jadval bo'yicha kutish rejimi",
+                 font=("Helvetica", 16, "bold")).pack(pady=10)
+        
+        ttk.Label(self.current_frame, text="Joriy kun:", font=("Helvetica", 12)).pack(pady=2)
+        self.day_label = ttk.Label(self.current_frame, text="", font=("Helvetica", 12))
+        self.day_label.pack(pady=2)
+        
+        ttk.Label(self.current_frame, text="Jadval bo'yicha boshlanish vaqti:", font=("Helvetica", 12)).pack(pady=2)
+        self.start_time_label = ttk.Label(self.current_frame, text="", font=("Helvetica", 12))
+        self.start_time_label.pack(pady=2)
+        
+        ttk.Label(self.current_frame, text="Joriy vaqt:", font=("Helvetica", 12)).pack(pady=2)
+        self.current_time_label = ttk.Label(self.current_frame, text="", font=("Helvetica", 12))
+        self.current_time_label.pack(pady=2)
+        
+        ttk.Label(self.current_frame, text="Qolgan vaqt:", font=("Helvetica", 12)).pack(pady=2)
+        self.remaining_time_label = ttk.Label(self.current_frame, text="", font=("Helvetica", 12))
+        self.remaining_time_label.pack(pady=2)
+        
+        ttk.Button(self.current_frame, text="To'xtatish",
+                  command=self.stop_attendance).pack(pady=10)
+        
+        def update_timer():
+            while self.running:
+                current_time = datetime.now()
+                current_day = current_time.strftime("%A")
+                try:
+                    if self.day_label.winfo_exists():
+                        self.day_label.config(text=f"{current_day}")
+                except tk.TclError:
+                    self.running = False
+                    break
                 
+                if current_day in self.schedule_data:
+                    schedule_entry = self.schedule_data[current_day]
+                    start_time = datetime.strptime(schedule_entry["start"], "%H:%M").time()
+                    start_datetime = datetime.combine(current_time.date(), start_time)
+                    if current_time > start_datetime:
+                        start_datetime += timedelta(days=1)
+                    try:
+                        if self.start_time_label.winfo_exists():
+                            self.start_time_label.config(text=f"{start_datetime.strftime('%H:%M')}")
+                    except tk.TclError:
+                        self.running = False
+                        break
+                
+                try:
+                    if self.current_time_label.winfo_exists():
+                        self.current_time_label.config(text=f"{current_time.strftime('%H:%M:%S')}")
+                except tk.TclError:
+                    self.running = False
+                    break
+                
+                if current_day in self.schedule_data:
+                    schedule_entry = self.schedule_data[current_day]
+                    start_time = datetime.strptime(schedule_entry["start"], "%H:%M").time()
+                    start_datetime = datetime.combine(current_time.date(), start_time)
+                    if current_time > start_datetime:
+                        start_datetime += timedelta(days=1)
+                    seconds_to_wait = max(0, (start_datetime - current_time).total_seconds())
+                    minutes, seconds = divmod(int(seconds_to_wait), 60)
+                    hours, minutes = divmod(minutes, 60)
+                    try:
+                        if self.remaining_time_label.winfo_exists():
+                            self.remaining_time_label.config(text=f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+                    except tk.TclError:
+                        self.running = False
+                        break
+                
+                try:
+                    self.root.update()
+                except tk.TclError:
+                    self.running = False
+                    break
+                tm.sleep(1)
+
+        threading.Thread(target=update_timer, daemon=True).start()
+
+        while self.running:
             current_day = datetime.now().strftime("%A")
-            current_time = datetime.now().time()
+            current_time = datetime.now()
             
             if current_day in self.schedule_data:
-                start_time = datetime.strptime(self.schedule_data[current_day]["start"], "%H:%M").time()
-                late_time = datetime.strptime(self.schedule_data[current_day]["late"], "%H:%M").time()
-                end_time = datetime.strptime(self.schedule_data[current_day]["end"], "%H:%M").time()
+                schedule_entry = self.schedule_data[current_day]
+                start_time = datetime.strptime(schedule_entry["start"], "%H:%M").time()
+                late_time = datetime.strptime(schedule_entry["late"], "%H:%M").time()
+                end_time = datetime.strptime(schedule_entry["end"], "%H:%M").time()
                 
-                if start_time <= current_time <= end_time:
-                    self.late_deadline = datetime.combine(datetime.now().date(), late_time)
-                    self.deadline = datetime.combine(datetime.now().date(), end_time)
+                start_datetime = datetime.combine(current_time.date(), start_time)
+                late_datetime = datetime.combine(current_time.date(), late_time)
+                end_datetime = datetime.combine(current_time.date(), end_time)
+                
+                if current_time > end_datetime:
+                    start_datetime += timedelta(days=1)
+                    late_datetime += timedelta(days=1)
+                    end_datetime += timedelta(days=1)
+                
+                if current_time < start_datetime:
+                    seconds_to_wait = (start_datetime - current_time).total_seconds()
+                    tm.sleep(seconds_to_wait)
+                
+                if start_datetime <= datetime.now() <= end_datetime:
+                    self.late_deadline = late_datetime
+                    self.deadline = end_datetime
                     self.attendance_system(camera_source)
-                elif current_time > end_time:
+                elif datetime.now() > end_datetime:
                     self.start_surveillance(camera_source)
-        
-        schedule.every(1).minutes.do(check_schedule)
-        while self.running:
-            schedule.run_pending()
-            tm.sleep(1)
+            
+            tm.sleep(60)
 
     def attendance_system(self, camera_source):
         if self.current_frame:
@@ -609,6 +712,7 @@ class AttendanceApp:
         
         if not self.cap.isOpened():
             messagebox.showerror("Xato", "Kamera ochilmadi!")
+            self.show_attendance_section()
             return
             
         self.attendance = {
@@ -621,7 +725,12 @@ class AttendanceApp:
                 "status": "Kelmagan",
                 "arrival_time": None,
                 "late_time": None,
-                "recorded": False
+                "recorded": False,
+                "distances": [],
+                "probability": 0.0,
+                "mean_distance": 0.0,
+                "variance": 0.0,
+                "std_dev": 0.0
             } 
             for name, data in self.database.items()
         }
@@ -632,7 +741,7 @@ class AttendanceApp:
         self.time_label = ttk.Label(self.current_frame, text="", font=("Helvetica", 12))
         self.time_label.pack(pady=5)
         
-        self.status_text = tk.Text(self.current_frame, height=15, width=60)
+        self.status_text = tk.Text(self.current_frame, height=15, width=80)
         self.status_text.pack(pady=10)
         
         ttk.Button(self.current_frame, text="Yakunlash",
@@ -649,8 +758,9 @@ class AttendanceApp:
                     break
                 remaining_time = self.deadline - current_time
                 minutes, seconds = divmod(remaining_time.seconds, 60)
-                self.time_label.config(text=f"Davomat tugashiga qolgan vaqt: {minutes:02d}:{seconds:02d}")
                 try:
+                    if self.time_label.winfo_exists():
+                        self.time_label.config(text=f"Davomat tugashiga qolgan vaqt: {minutes:02d}:{seconds:02d}")
                     self.root.update()
                 except tk.TclError:
                     self.running = False
@@ -660,11 +770,15 @@ class AttendanceApp:
         def video_loop():
             while self.running and not self.video_event.is_set():
                 if not self.cap or not self.cap.isOpened():
+                    self.root.after(0, lambda: messagebox.showerror("Xato", "Kamera uzildi! Davomat to'xtatildi."))
+                    self.stop_attendance()
                     break
                     
                 ret, frame = self.cap.read()
                 if not ret:
-                    continue
+                    self.root.after(0, lambda: messagebox.showerror("Xato", "Kamera o'qishda xato! Davomat to'xtatildi."))
+                    self.stop_attendance()
+                    break
                     
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 face_locations = face_recognition.face_locations(rgb_frame)
@@ -675,29 +789,52 @@ class AttendanceApp:
                     name = "Nomalum"
                     color = (0, 0, 255)
                     status = ""
-                    for person_name, person_data in self.database.items():
-                        results = face_recognition.compare_faces(person_data["encodings"], face_encoding, tolerance=0.5)
-                        if any(results):
-                            name = person_name
-                            if not self.attendance[name]["recorded"]:
-                                if current_time <= self.late_deadline:
-                                    self.attendance[name]["status"] = "Kelgan"
-                                    self.attendance[name]["arrival_time"] = current_time.strftime("%H:%M:%S")
-                                else:
-                                    self.attendance[name]["status"] = "Kech qolgan"
-                                    self.attendance[name]["late_time"] = current_time.strftime("%H:%M:%S")
-                                self.attendance[name]["recorded"] = True
-                                self.update_status_text(name, self.attendance[name]["status"])
-                            status = self.attendance[name]["status"]
-                            if status == "Kelgan":
-                                color = (0, 255, 0)
-                            elif status == "Kech qolgan":
-                                color = (255, 165, 0)
-                            break
+                    max_probability = 0.0
+                    best_match_name = None
                     
-                    cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
-                    cv2.putText(frame, f"{name} ({status})", (left, top - 10),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                    for person_name, person_data in self.database.items():
+                        distances = face_recognition.face_distance(person_data["encodings"], face_encoding)
+                        if len(distances) > 0:
+                            min_distance = np.min(distances)
+                            probability = 1 - min_distance
+                            if probability > max_probability and probability > 0.5:
+                                max_probability = probability
+                                best_match_name = person_name
+                                self.attendance[person_name]["distances"].extend(distances)
+                                mean, variance, std_dev = self.calculate_statistics(self.attendance[person_name]["distances"])
+                                self.attendance[person_name]["probability"] = probability
+                                self.attendance[person_name]["mean_distance"] = mean
+                                self.attendance[person_name]["variance"] = variance
+                                self.attendance[person_name]["std_dev"] = std_dev
+                    
+                    if best_match_name:
+                        name = best_match_name
+                        if not self.attendance[name]["recorded"]:
+                            if current_time <= self.late_deadline:
+                                self.attendance[name]["status"] = "Kelgan"
+                                self.attendance[name]["arrival_time"] = current_time.strftime("%H:%M:%S")
+                            else:
+                                self.attendance[name]["status"] = "Kech qolgan"
+                                self.attendance[name]["late_time"] = current_time.strftime("%H:%M:%S")
+                            self.attendance[name]["recorded"] = True
+                            self.update_status_text(
+                                name, 
+                                self.attendance[name]["status"],
+                                self.attendance[name]["probability"],
+                                self.attendance[name]["mean_distance"],
+                                self.attendance[name]["variance"],
+                                self.attendance[name]["std_dev"]
+                            )
+                        status = self.attendance[name]["status"]
+                        probability = self.attendance[name]["probability"]
+                        if status == "Kelgan":
+                            color = (0, 255, 0)
+                        elif status == "Kech qolgan":
+                            color = (255, 165, 0)
+                        
+                        cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
+                        cv2.putText(frame, f"{name} ({status}, {probability:.2%})", 
+                                   (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
                 
                 cv2.imshow('Davomat', frame)
                 if cv2.waitKey(1) & 0xFF == 27:
@@ -708,7 +845,7 @@ class AttendanceApp:
                 except tk.TclError:
                     self.running = False
                     break
-                
+            
             if self.cap:
                 self.cap.release()
             cv2.destroyAllWindows()
@@ -729,15 +866,24 @@ class AttendanceApp:
         self.cap = cv2.VideoCapture(camera_source)
         if not self.cap.isOpened():
             messagebox.showerror("Xato", "Kamera ochilmadi!")
+            self.show_attendance_section()
             return
         
         self.surveillance_event = threading.Event()
 
         def surveillance_loop():
             while self.running and not self.surveillance_event.is_set():
+                if not self.cap or not self.cap.isOpened():
+                    self.root.after(0, lambda: messagebox.showerror("Xato", "Kamera uzildi! Kuzatuv to'xtatildi."))
+                    self.stop_attendance()
+                    break
+                    
                 ret, frame = self.cap.read()
                 if not ret:
-                    continue
+                    self.root.after(0, lambda: messagebox.showerror("Xato", "Kamera o'qishda xato! Kuzatuv to'xtatildi."))
+                    self.stop_attendance()
+                    break
+                    
                 cv2.imshow('Kuzatuv', frame)
                 if cv2.waitKey(1) & 0xFF == 27:
                     self.stop_attendance()
@@ -754,11 +900,19 @@ class AttendanceApp:
         
         threading.Thread(target=surveillance_loop, daemon=True).start()
 
-    def update_status_text(self, name, status):
+    def update_status_text(self, name, status, probability, mean_distance, variance, std_dev):
         try:
             if self.status_text and self.running:
                 self.status_text.config(state="normal")
-                self.status_text.insert(tk.END, f"{name}: {status} ({datetime.now().strftime('%H:%M:%S')})\n")
+                self.status_text.insert(tk.END, f"{'='*50}\n")
+                self.status_text.insert(tk.END, 
+                    f"{name}: {status} ({datetime.now().strftime('%H:%M:%S')})\n"
+                    f"  Ehtimollik: {probability:.2%}\n"
+                    f"  O'rtacha masofa: {mean_distance:.4f}\n"
+                    f"  Dispersiya: {variance:.4f}\n"
+                    f"  Kvadrat chetlanish: {std_dev:.4f}\n\n"
+                    f"{'-'*30}\n"
+                )
                 self.status_text.config(state="disabled")
                 self.status_text.see(tk.END)
         except tk.TclError:
@@ -774,9 +928,18 @@ class AttendanceApp:
             self.surveillance_event.set()
         if self.cap:
             self.cap.release()
+            self.cap = None
         cv2.destroyAllWindows()
-        self.save_attendance()
-        self.show_email_contact_selection()
+        if self.current_frame:
+            try:
+                self.current_frame.destroy()
+            except tk.TclError:
+                pass
+        if hasattr(self, 'attendance'):
+            self.save_attendance()
+            self.show_email_contact_selection()
+        else:
+            self.create_main_interface()
 
     def save_attendance(self):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -791,7 +954,11 @@ class AttendanceApp:
                 "Guruh": data["group"],
                 "Holati": data["status"],
                 "Kelgan vaqti": data["arrival_time"],
-                "Kech qolgan vaqti": data["late_time"]
+                "Kech qolgan vaqti": data["late_time"],
+                "Ehtimollik": f"{data['probability']:.2%}" if data["probability"] > 0 else None,
+                "O'rtacha masofa": f"{data['mean_distance']:.4f}" if data["mean_distance"] > 0 else None,
+                "Dispersiya": f"{data['variance']:.4f}" if data["variance"] > 0 else None,
+                "Kvadrat chetlanish": f"{data['std_dev']:.4f}" if data["std_dev"] > 0 else None
             }
             for name, data in self.attendance.items()
         ])
@@ -872,15 +1039,22 @@ class AttendanceApp:
             )
             msg.attach(part)
             
+            progress_label = ttk.Label(self.current_frame, text="Email yuborilmoqda...", font=("Helvetica", 12))
+            progress_label.pack(pady=5)
+            self.root.update()
+            
             server = smtplib.SMTP(smtp_server, smtp_port)
             server.starttls()
             server.login(sender, password)
             text = msg.as_string()
             server.sendmail(sender, receiver, text)
             server.quit()
+            
+            progress_label.destroy()
             messagebox.showinfo("Muvaffaqiyat", "Hisobot email orqali yuborildi!")
             self.show_summary()
         except Exception as e:
+            progress_label.destroy()
             messagebox.showerror("Xato", f"Email yuborishda xato: {e}")
             self.show_summary()
 
@@ -894,29 +1068,43 @@ class AttendanceApp:
         ttk.Label(self.current_frame, text="Davomat Yakuni",
                  font=("Helvetica", 18, "bold")).pack(pady=10)
         
-        summary_text = tk.Text(self.current_frame, height=20, width=60)
+        summary_text = tk.Text(self.current_frame, height=20, width=80)
         summary_text.pack(pady=10)
         
         summary_text.insert(tk.END, "=== Davomat Yakuni ===\n\n")
         summary_text.insert(tk.END, "Kelganlar:\n")
         for name, data in self.attendance.items():
             if data["status"] == "Kelgan":
-                summary_text.insert(tk.END, f"- {name} {data['surname']} {data['father_name']} "
-                                          f"({data['faculty']}, {data['direction']}, {data['group']}) - "
-                                          f"{data['arrival_time']}\n")
+                summary_text.insert(tk.END, 
+                    f"- {name} {data['surname']} {data['father_name']} "
+                    f"({data['faculty']}, {data['direction']}, {data['group']}) - "
+                    f"{data['arrival_time']}\n"
+                    f"  Ehtimollik: {data['probability']:.2%}\n"
+                    f"  O'rtacha masofa: {data['mean_distance']:.4f}\n"
+                    f"  Dispersiya: {data['variance']:.4f}\n"
+                    f"  Kvadrat chetlanish: {data['std_dev']:.4f}\n"
+                )
         
         summary_text.insert(tk.END, "\nKech qolganlar:\n")
         for name, data in self.attendance.items():
             if data["status"] == "Kech qolgan":
-                summary_text.insert(tk.END, f"- {name} {data['surname']} {data['father_name']} "
-                                          f"({data['faculty']}, {data['direction']}, {data['group']}) - "
-                                          f"{data['late_time']}\n")
+                summary_text.insert(tk.END, 
+                    f"- {name} {data['surname']} {data['father_name']} "
+                    f"({data['faculty']}, {data['direction']}, {data['group']}) - "
+                    f"{data['late_time']}\n"
+                    f"  Ehtimollik: {data['probability']:.2%}\n"
+                    f"  O'rtacha masofa: {data['mean_distance']:.4f}\n"
+                    f"  Dispersiya: {data['variance']:.4f}\n"
+                    f"  Kvadrat chetlanish: {data['std_dev']:.4f}\n"
+                )
         
         summary_text.insert(tk.END, "\nKelmaganlar:\n")
         for name, data in self.attendance.items():
             if data["status"] == "Kelmagan":
-                summary_text.insert(tk.END, f"- {name} {data['surname']} {data['father_name']} "
-                                          f"({data['faculty']}, {data['direction']}, {data['group']})\n")
+                summary_text.insert(tk.END, 
+                    f"- {name} {data['surname']} {data['father_name']} "
+                    f"({data['faculty']}, {data['direction']}, {data['group']})\n"
+                )
         
         summary_text.config(state="disabled")
         
@@ -1133,7 +1321,7 @@ class AttendanceApp:
         msg['To'] = receiver
         msg['Subject'] = f"Davomat Hisoboti {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
-        body = f"Davomat hisoboti ilova sifatida yuborildi.HISOBOT VAQTI:{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        body = "Davomat hisoboti ilova sifatida yuborildi."
         msg.attach(MIMEText(body, 'plain'))
         
         try:
@@ -1148,15 +1336,24 @@ class AttendanceApp:
             )
             msg.attach(part)
             
+            progress_label = ttk.Label(self.current_frame, text="Email yuborilmoqda...", font=("Helvetica", 12))
+            progress_label.pack(pady=5)
+            self.root.update()
+            
             server = smtplib.SMTP(smtp_server, smtp_port)
             server.starttls()
             server.login(sender, password)
             text = msg.as_string()
             server.sendmail(sender, receiver, text)
             server.quit()
+            
+            progress_label.destroy()
             messagebox.showinfo("Muvaffaqiyat", "Hisobot email orqali yuborildi!")
+            self.create_main_interface()
         except Exception as e:
+            progress_label.destroy()
             messagebox.showerror("Xato", f"Email yuborishda xato: {e}")
+            self.create_main_interface()
 
     def run(self):
         self.root.mainloop()
@@ -1164,8 +1361,3 @@ class AttendanceApp:
 if __name__ == "__main__":
     app = AttendanceApp()
     app.run()
-
-
-
-    
-# BEKFURR INC 2025
