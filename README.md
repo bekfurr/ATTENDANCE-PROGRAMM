@@ -68,5 +68,8 @@
   <h2>🏷️ Author</h2>
   <p><strong>BEKFURR INC – 2025</strong><br>This system was created to help automate and simplify the attendance process using AI-powered face recognition.</p>
 
+
+## License
+This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) and [NOTICE](NOTICE) files for details.
 </body>
 </html>
