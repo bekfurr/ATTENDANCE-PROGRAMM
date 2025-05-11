@@ -1361,3 +1361,12 @@ class AttendanceApp:
 if __name__ == "__main__":
     app = AttendanceApp()
     app.run()
+
+
+
+#ATTENDANCE-PROGRAMM
+#Copyright 2025 BEKFURR INC ©
+#
+#This product includes software developed by @BEKFURR
+#Licensed under the Apache License, Version 2.0.
+#See the LICENSE file for details.
