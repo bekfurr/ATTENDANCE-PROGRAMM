@@ -2,7 +2,8 @@ import cv2
 import face_recognition
 import numpy as np
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, Canvas
+from PIL import Image, ImageTk
 import os
 import threading
 import pandas as pd
@@ -15,6 +16,10 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
+import matplotlib.pyplot as plt
+from scipy.stats import binom
+from openpyxl import Workbook
+from openpyxl.chart import LineChart, Reference
 
 class AttendanceApp:
     def __init__(self):
@@ -92,6 +97,8 @@ class AttendanceApp:
                   command=self.show_contacts_section).pack(fill="x", pady=5)
         ttk.Button(btn_frame, text="SMTP Sozlamalari",
                   command=self.show_smtp_settings_section).pack(fill="x", pady=5)
+        ttk.Button(btn_frame, text="O'xshashlik Tahlili",
+                  command=self.show_similarity_analysis).pack(fill="x", pady=5)
         ttk.Button(btn_frame, text="Chiqish",
                   command=self.quit_application).pack(fill="x", pady=5)
         
@@ -500,16 +507,6 @@ class AttendanceApp:
                 pass
         return available_cameras
 
-    def calculate_statistics(self, distances):
-        if not distances:
-            return 0.0, 0.0, 0.0
-        
-        mean = np.mean(distances)
-        variance = np.var(distances)
-        std_dev = np.sqrt(variance)
-        
-        return mean, variance, std_dev
-
     def start_attendance(self):
         if not self.db_select_var.get():
             messagebox.showwarning("Xato", "Baza tanlanmadi!")
@@ -726,11 +723,8 @@ class AttendanceApp:
                 "arrival_time": None,
                 "late_time": None,
                 "recorded": False,
-                "distances": [],
-                "probability": 0.0,
-                "mean_distance": 0.0,
-                "variance": 0.0,
-                "std_dev": 0.0
+                "similarity_prob": 0.0,
+                "dissimilarity_prob": 0.0
             } 
             for name, data in self.database.items()
         }
@@ -800,12 +794,8 @@ class AttendanceApp:
                             if probability > max_probability and probability > 0.5:
                                 max_probability = probability
                                 best_match_name = person_name
-                                self.attendance[person_name]["distances"].extend(distances)
-                                mean, variance, std_dev = self.calculate_statistics(self.attendance[person_name]["distances"])
-                                self.attendance[person_name]["probability"] = probability
-                                self.attendance[person_name]["mean_distance"] = mean
-                                self.attendance[person_name]["variance"] = variance
-                                self.attendance[person_name]["std_dev"] = std_dev
+                                self.attendance[person_name]["similarity_prob"] = probability
+                                self.attendance[person_name]["dissimilarity_prob"] = 1 - probability
                     
                     if best_match_name:
                         name = best_match_name
@@ -820,13 +810,11 @@ class AttendanceApp:
                             self.update_status_text(
                                 name, 
                                 self.attendance[name]["status"],
-                                self.attendance[name]["probability"],
-                                self.attendance[name]["mean_distance"],
-                                self.attendance[name]["variance"],
-                                self.attendance[name]["std_dev"]
+                                self.attendance[name]["similarity_prob"],
+                                self.attendance[name]["dissimilarity_prob"]
                             )
                         status = self.attendance[name]["status"]
-                        probability = self.attendance[name]["probability"]
+                        probability = self.attendance[name]["similarity_prob"]
                         if status == "Kelgan":
                             color = (0, 255, 0)
                         elif status == "Kech qolgan":
@@ -900,17 +888,15 @@ class AttendanceApp:
         
         threading.Thread(target=surveillance_loop, daemon=True).start()
 
-    def update_status_text(self, name, status, probability, mean_distance, variance, std_dev):
+    def update_status_text(self, name, status, similarity_prob, dissimilarity_prob):
         try:
             if self.status_text and self.running:
                 self.status_text.config(state="normal")
                 self.status_text.insert(tk.END, f"{'='*50}\n")
                 self.status_text.insert(tk.END, 
                     f"{name}: {status} ({datetime.now().strftime('%H:%M:%S')})\n"
-                    f"  Ehtimollik: {probability:.2%}\n"
-                    f"  O'rtacha masofa: {mean_distance:.4f}\n"
-                    f"  Dispersiya: {variance:.4f}\n"
-                    f"  Kvadrat chetlanish: {std_dev:.4f}\n\n"
+                    f"  O'xshashlik ehtimolligi: {similarity_prob:.2%}\n"
+                    f"  O'xshamaslik ehtimolligi: {dissimilarity_prob:.2%}\n\n"
                     f"{'-'*30}\n"
                 )
                 self.status_text.config(state="disabled")
@@ -941,10 +927,49 @@ class AttendanceApp:
         else:
             self.create_main_interface()
 
+    def calculate_binomial_distribution(self):
+        total_students = len(self.attendance)
+        attended = sum(1 for data in self.attendance.values() if data["status"] in ["Kelgan", "Kech qolgan"])
+        p_attend = attended / total_students if total_students > 0 else 0.4  # Default to 40% if no data
+        p_not_attend = 1 - p_attend
+        
+        n = total_students
+        k_values = list(range(n + 1))  # 0 to n students attending
+        probabilities = [binom.pmf(k, n, p_attend) for k in k_values]
+        
+        # Create distribution table
+        dist_table = pd.DataFrame({
+            "K (Kelganlar soni)": k_values,
+            "Ehtimollik (P(K))": [f"{p:.4f}" for p in probabilities]
+        })
+        
+        # Create data for Excel chart
+        chart_data = pd.DataFrame({
+            "K (Kelganlar soni)": k_values,
+            "Ehtimollik (P(K))": probabilities
+        })
+        
+        # Generate Matplotlib plot for Tkinter display
+        plt.figure(figsize=(10, 6))
+        plt.plot(k_values, probabilities, 'b-', marker='o', label='Taqsimot ko\'pburchagi')
+        plt.title('Davomat Taqsimot Qonuni (Binomial Taqsimot)')
+        plt.xlabel('Kelgan o\'quvchilar soni (K)')
+        plt.ylabel('Ehtimollik (P(K))')
+        plt.grid(True)
+        plt.legend()
+        
+        plot_path = f"distribution_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.png"
+        plt.savefig(plot_path)
+        plt.close()
+        
+        return dist_table, chart_data, plot_path, p_attend, p_not_attend
+
     def save_attendance(self):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.filename = f"attendance_{timestamp}.xlsx"
-        df = pd.DataFrame([
+        
+        # Attendance data
+        attendance_df = pd.DataFrame([
             {
                 "Ism": name,
                 "Familiya": data["surname"],
@@ -955,15 +980,56 @@ class AttendanceApp:
                 "Holati": data["status"],
                 "Kelgan vaqti": data["arrival_time"],
                 "Kech qolgan vaqti": data["late_time"],
-                "Ehtimollik": f"{data['probability']:.2%}" if data["probability"] > 0 else None,
-                "O'rtacha masofa": f"{data['mean_distance']:.4f}" if data["mean_distance"] > 0 else None,
-                "Dispersiya": f"{data['variance']:.4f}" if data["variance"] > 0 else None,
-                "Kvadrat chetlanish": f"{data['std_dev']:.4f}" if data["std_dev"] > 0 else None
+                "O'xshashlik ehtimolligi": f"{data['similarity_prob']:.2%}" if data["similarity_prob"] > 0 else None,
+                "O'xshamaslik ehtimolligi": f"{data['dissimilarity_prob']:.2%}" if data["dissimilarity_prob"] > 0 else None
             }
             for name, data in self.attendance.items()
         ])
-        df.to_excel(self.filename, index=False)
+        
+        # Binomial distribution data
+        dist_table, chart_data, self.plot_path, p_attend, p_not_attend = self.calculate_binomial_distribution()
+        dist_table.loc[len(dist_table)] = ["P (Kelish)", f"{p_attend:.4f}"]
+        dist_table.loc[len(dist_table)] = ["P (Kelmagan)", f"{p_not_attend:.4f}"]
+        
+        # Save to Excel with two sheets
+        with pd.ExcelWriter(self.filename, engine='openpyxl') as writer:
+            # Write attendance data
+            attendance_df.to_excel(writer, sheet_name='Davomat', index=False)
+            # Write distribution table
+            dist_table.to_excel(writer, sheet_name='Ehtimollik Tahlili', index=False)
+            # Write chart data to a separate sheet for chart reference
+            chart_data.to_excel(writer, sheet_name='ChartData', index=False)
+            
+            # Access the workbook and sheets
+            workbook = writer.book
+            chart_sheet = workbook['Ehtimollik Tahlili']
+            chart_data_sheet = workbook['ChartData']
+            
+            # Create a line chart
+            chart = LineChart()
+            chart.title = "Davomat Taqsimot Qonuni (Binomial Taqsimot)"
+            chart.x_axis.title = "Kelgan o'quvchilar soni (K)"
+            chart.y_axis.title = "Ehtimollik (P(K))"
+            chart.legend = None  # Remove legend for simplicity
+            
+            # Reference data for the chart
+            data = Reference(chart_data_sheet, min_col=2, min_row=2, max_row=len(chart_data) + 1, max_col=2)
+            categories = Reference(chart_data_sheet, min_col=1, min_row=2, max_row=len(chart_data) + 1)
+            chart.add_data(data, titles_from_data=False)
+            chart.set_categories(categories)
+            
+            # Style the chart
+            chart.height = 10  # Height in cm
+            chart.width = 15   # Width in cm
+            
+            # Add the chart to the Ehtimollik Tahlili sheet
+            chart_sheet.add_chart(chart, "D2")
+        
         self.attendance_data = self.attendance
+        self.dist_table = dist_table
+        self.chart_data = chart_data  # Store for potential reuse
+        self.p_attend = p_attend
+        self.p_not_attend = p_not_attend
 
     def show_email_contact_selection(self):
         if self.current_frame:
@@ -1024,7 +1090,7 @@ class AttendanceApp:
         msg['To'] = receiver
         msg['Subject'] = f"Davomat Hisoboti {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
-        body = "Davomat hisoboti ilova sifatida yuborildi."
+        body = "Davomat hisoboti va ehtimollik tahlili ilova sifatida yuborildi."
         msg.attach(MIMEText(body, 'plain'))
         
         try:
@@ -1079,10 +1145,8 @@ class AttendanceApp:
                     f"- {name} {data['surname']} {data['father_name']} "
                     f"({data['faculty']}, {data['direction']}, {data['group']}) - "
                     f"{data['arrival_time']}\n"
-                    f"  Ehtimollik: {data['probability']:.2%}\n"
-                    f"  O'rtacha masofa: {data['mean_distance']:.4f}\n"
-                    f"  Dispersiya: {data['variance']:.4f}\n"
-                    f"  Kvadrat chetlanish: {data['std_dev']:.4f}\n"
+                    f"  O'xshashlik ehtimolligi: {data['similarity_prob']:.2%}\n"
+                    f"  O'xshamaslik ehtimolligi: {data['dissimilarity_prob']:.2%}\n"
                 )
         
         summary_text.insert(tk.END, "\nKech qolganlar:\n")
@@ -1092,10 +1156,8 @@ class AttendanceApp:
                     f"- {name} {data['surname']} {data['father_name']} "
                     f"({data['faculty']}, {data['direction']}, {data['group']}) - "
                     f"{data['late_time']}\n"
-                    f"  Ehtimollik: {data['probability']:.2%}\n"
-                    f"  O'rtacha masofa: {data['mean_distance']:.4f}\n"
-                    f"  Dispersiya: {data['variance']:.4f}\n"
-                    f"  Kvadrat chetlanish: {data['std_dev']:.4f}\n"
+                    f"  O'xshashlik ehtimolligi: {data['similarity_prob']:.2%}\n"
+                    f"  O'xshamaslik ehtimolligi: {data['dissimilarity_prob']:.2%}\n"
                 )
         
         summary_text.insert(tk.END, "\nKelmaganlar:\n")
@@ -1106,9 +1168,154 @@ class AttendanceApp:
                     f"({data['faculty']}, {data['direction']}, {data['group']})\n"
                 )
         
+        # Add probability analysis
+        summary_text.insert(tk.END, "\n=== Ehtimollik Tahlili ===\n")
+        summary_text.insert(tk.END, "Taqsimot Qonuni Jadvali:\n")
+        for _, row in self.dist_table.iterrows():
+            if row["K (Kelganlar soni)"] not in ["P (Kelish)", "P (Kelmagan)"]:
+                summary_text.insert(tk.END, 
+                    f"Kelganlar soni {row['K (Kelganlar soni)']}: {row['Ehtimollik (P(K))']}\n"
+                )
+        summary_text.insert(tk.END, f"\nP (Kelish): {self.p_attend:.4f}\n")
+        summary_text.insert(tk.END, f"P (Kelmagan): {self.p_not_attend:.4f}\n")
+        
         summary_text.config(state="disabled")
         
+        ttk.Button(self.current_frame, text="Taqsimot Chizmasini Ko'rish",
+                  command=self.show_distribution_plot).pack(pady=5)
+        ttk.Button(self.current_frame, text="Ehtimollik Tahlilini Ko'rish",
+                  command=self.show_probability_analysis).pack(pady=5)
         ttk.Button(self.current_frame, text="Bosh menyuga",
+                  command=self.create_main_interface).pack(pady=5)
+
+    def show_distribution_plot(self):
+        if hasattr(self, 'chart_data'):
+            # Regenerate the plot for Matplotlib display
+            k_values = self.chart_data["K (Kelganlar soni)"]
+            probabilities = self.chart_data["Ehtimollik (P(K))"]
+            
+            plt.figure(figsize=(10, 6))
+            plt.plot(k_values, probabilities, 'b-', marker='o', label='Taqsimot ko\'pburchagi')
+            plt.title('Davomat Taqsimot Qonuni (Binomial Taqsimot)')
+            plt.xlabel('Kelgan o\'quvchilar soni (K)')
+            plt.ylabel('Ehtimollik (P(K))')
+            plt.grid(True)
+            plt.legend()
+            plt.show()
+        else:
+            messagebox.showwarning("Ogohlantirish", "Chizma ma'lumotlari mavjud emas!")
+
+    def show_probability_analysis(self):
+        top = tk.Toplevel(self.root)
+        top.title("Ehtimollik Tahlili")
+        top.geometry("800x600")
+        
+        ttk.Label(top, text="Taqsimot Qonuni va Ko'pburchagi",
+                 font=("Helvetica", 16, "bold")).pack(pady=10)
+        
+        # Display distribution table
+        table_frame = ttk.Frame(top)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        text = tk.Text(table_frame, height=10, width=50)
+        text.pack(fill="both", expand=True)
+        text.insert(tk.END, "Taqsimot Qonuni Jadvali:\n\n")
+        for _, row in self.dist_table.iterrows():
+            if row["K (Kelganlar soni)"] not in ["P (Kelish)", "P (Kelmagan)"]:
+                text.insert(tk.END, 
+                    f"Kelganlar soni {row['K (Kelganlar soni)']}: {row['Ehtimollik (P(K))']}\n"
+                )
+        text.insert(tk.END, f"\nP (Kelish): {self.p_attend:.4f}\n")
+        text.insert(tk.END, f"P (Kelmagan): {self.p_not_attend:.4f}\n")
+        text.config(state="disabled")
+        
+        # Display plot in Tkinter canvas
+        if hasattr(self, 'plot_path') and os.path.exists(self.plot_path):
+            img = Image.open(self.plot_path)
+            img = img.resize((500, 300), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            canvas = Canvas(top, width=500, height=300)
+            canvas.pack(pady=10)
+            canvas.create_image(0, 0, anchor="nw", image=photo)
+            canvas.image = photo  # Keep a reference
+        
+        ttk.Button(top, text="Yopish", command=top.destroy).pack(pady=10)
+
+    def show_similarity_analysis(self):
+        if self.current_frame:
+            self.current_frame.destroy()
+            
+        self.current_frame = ttk.Frame(self.root)
+        self.current_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ttk.Label(self.current_frame, text="O'quvchilar O'xshashlik Tahlili",
+                 font=("Helvetica", 18, "bold")).pack(pady=10)
+        
+        db_frame = ttk.Frame(self.current_frame)
+        db_frame.pack(fill="x", pady=5)
+        ttk.Label(db_frame, text="Baza tanlash:", width=15).pack(side="left")
+        self.similarity_db_var = tk.StringVar()
+        ttk.Button(db_frame, text="Fayl tanlash",
+                  command=self.select_similarity_database).pack(side="left", padx=5)
+        ttk.Entry(db_frame, textvariable=self.similarity_db_var,
+                 state="readonly").pack(fill="x", expand=True, padx=5)
+        
+        ttk.Button(self.current_frame, text="Tahlilni Boshlash",
+                  command=self.perform_similarity_analysis).pack(pady=10)
+        ttk.Button(self.current_frame, text="Orqaga",
+                  command=self.create_main_interface).pack(pady=5)
+
+    def select_similarity_database(self):
+        file_path = filedialog.askopenfilename(filetypes=[("NumPy files", "*.npy")])
+        if file_path:
+            self.similarity_db_var.set(file_path)
+
+    def perform_similarity_analysis(self):
+        if not self.similarity_db_var.get():
+            messagebox.showwarning("Ogohlantirish", "Baza tanlanmadi!")
+            return
+        
+        try:
+            database = np.load(self.similarity_db_var.get(), allow_pickle=True).item()
+        except:
+            messagebox.showerror("Xato", "Baza faylini yuklashda xato!")
+            return
+        
+        if self.current_frame:
+            self.current_frame.destroy()
+            
+        self.current_frame = ttk.Frame(self.root)
+        self.current_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ttk.Label(self.current_frame, text="O'quvchilar O'xshashlik Tahlili Natijalari",
+                 font=("Helvetica", 18, "bold")).pack(pady=10)
+        
+        text = tk.Text(self.current_frame, height=20, width=80)
+        text.pack(pady=10)
+        
+        text.insert(tk.END, "=== O'xshashlik Tahlili ===\n\n")
+        for name1 in database:
+            for name2 in database:
+                if name1 < name2:  # Avoid duplicates and self-comparison
+                    encodings1 = database[name1]["encodings"]
+                    encodings2 = database[name2]["encodings"]
+                    distances = []
+                    for enc1 in encodings1:
+                        for enc2 in encodings2:
+                            dist = face_recognition.face_distance([enc1], enc2)[0]
+                            distances.append(dist)
+                    avg_distance = np.mean(distances)
+                    similarity_prob = 1 - avg_distance
+                    dissimilarity_prob = avg_distance
+                    text.insert(tk.END,
+                        f"{name1} va {name2}:\n"
+                        f"  O'xshashlik ehtimolligi: {similarity_prob:.2%}\n"
+                        f"  O'xshamaslik ehtimolligi: {dissimilarity_prob:.2%}\n\n"
+                    )
+        
+        text.config(state="disabled")
+        
+        ttk.Button(self.current_frame, text="Orqaga",
                   command=self.create_main_interface).pack(pady=10)
 
     def show_contacts_section(self):
@@ -1361,7 +1568,6 @@ class AttendanceApp:
 if __name__ == "__main__":
     app = AttendanceApp()
     app.run()
-
 
 
 #ATTENDANCE-PROGRAMM
