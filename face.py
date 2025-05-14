@@ -930,18 +930,25 @@ class AttendanceApp:
     def calculate_binomial_distribution(self):
         total_students = len(self.attendance)
         attended = sum(1 for data in self.attendance.values() if data["status"] in ["Kelgan", "Kech qolgan"])
-        p_attend = attended / total_students if total_students > 0 else 0.4  # Default to 40% if no data
+        p_attend = attended / total_students if total_students > 0 else 0.2  # Default to 0.2 if no data
         p_not_attend = 1 - p_attend
         
         n = total_students
         k_values = list(range(n + 1))  # 0 to n students attending
         probabilities = [binom.pmf(k, n, p_attend) for k in k_values]
         
+        # Verify sum of probabilities
+        prob_sum = sum(probabilities)
+        if not 0.999 <= prob_sum <= 1.001:
+            print(f"Warning: Sum of probabilities ({prob_sum}) is not close to 1!")
+        
         # Create distribution table
         dist_table = pd.DataFrame({
             "K (Kelganlar soni)": k_values,
-            "Ehtimollik (P(K))": [f"{p:.4f}" for p in probabilities]
+            "Ehtimollik (P(K))": [f"{p:.6f}" for p in probabilities]
         })
+        dist_table.loc[len(dist_table)] = ["P (Kelish)", f"{p_attend:.4f}"]
+        dist_table.loc[len(dist_table)] = ["P (Kelmagan)", f"{p_not_attend:.4f}"]
         
         # Create data for Excel chart
         chart_data = pd.DataFrame({
@@ -957,6 +964,8 @@ class AttendanceApp:
         plt.ylabel('Ehtimollik (P(K))')
         plt.grid(True)
         plt.legend()
+        plt.ylim(0, max(probabilities) * 1.1 if max(probabilities) > 0 else 1)  # Ensure small probabilities are visible
+        plt.xlim(-0.5, n + 0.5)  # Adjust x-axis for better visibility
         
         plot_path = f"distribution_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.png"
         plt.savefig(plot_path)
@@ -988,8 +997,6 @@ class AttendanceApp:
         
         # Binomial distribution data
         dist_table, chart_data, self.plot_path, p_attend, p_not_attend = self.calculate_binomial_distribution()
-        dist_table.loc[len(dist_table)] = ["P (Kelish)", f"{p_attend:.4f}"]
-        dist_table.loc[len(dist_table)] = ["P (Kelmagan)", f"{p_not_attend:.4f}"]
         
         # Save to Excel with two sheets
         with pd.ExcelWriter(self.filename, engine='openpyxl') as writer:
@@ -1201,6 +1208,8 @@ class AttendanceApp:
             plt.ylabel('Ehtimollik (P(K))')
             plt.grid(True)
             plt.legend()
+            plt.ylim(0, max(probabilities) * 1.1 if max(probabilities) > 0 else 1)
+            plt.xlim(-0.5, len(k_values) - 0.5)
             plt.show()
         else:
             messagebox.showwarning("Ogohlantirish", "Chizma ma'lumotlari mavjud emas!")
